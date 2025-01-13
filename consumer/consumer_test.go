@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	_ "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/assert"
 	_ "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

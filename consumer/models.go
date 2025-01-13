@@ -22,6 +22,7 @@ type HttpConf struct {
 	Host           string
 	Path           string
 	Token          string
+	Id             string
 	Concurrency    int
 	TimeOutSeconds int32
 }

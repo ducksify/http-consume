@@ -48,7 +48,14 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 	}
 
 	httpRequest, _ := http.NewRequest(http.MethodGet, urlHttp.String(), nil)
-	httpRequest.Header.Set("Authorization", "Bearer "+conf.Token)
+	// inject Bearer if token is set
+	if conf.Token != "" {
+		httpRequest.Header.Set("Authorization", fmt.Sprintf("Bearer %s", conf.Token))
+	}
+	// inject Scanner ID if set
+	if conf.Id != "" {
+		httpRequest.Header.Set("X-Panop-Scanner", conf.Id)
+	}
 
 	return &HTTP{config: conf, httpClient: httpClient, httpReq: httpRequest}, nil
 }
@@ -86,8 +93,7 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 			}
 
 			if result.StatusCode != http.StatusOK {
-				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode),
-					SentinelHttpError)
+				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
 			}
 			body, err := io.ReadAll(result.Body)
 			result.Body.Close()
