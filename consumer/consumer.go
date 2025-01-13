@@ -48,8 +48,10 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 	}
 
 	httpRequest, _ := http.NewRequest(http.MethodGet, urlHttp.String(), nil)
-	httpRequest.Header.Set("Authorization", "Bearer "+conf.Token)
-
+	// inject Bearer if token is set
+	if conf.Token != "" {
+		httpRequest.Header.Set("Authorization", fmt.Sprintf("Bearer %s", conf.Token))
+	}
 	return &HTTP{config: conf, httpClient: httpClient, httpReq: httpRequest}, nil
 }
 

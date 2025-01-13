@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/panop-io/http-consume/consumer"
+	"github.com/ducksify/http-consume/consumer"
 )
 
 func test(b []byte) error {
