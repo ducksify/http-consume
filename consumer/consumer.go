@@ -93,9 +93,7 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 			}
 
 			if result.StatusCode != http.StatusOK {
-				// return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
-				fmt.Println("error http during call: ", http.StatusText(result.StatusCode))
-				continue
+				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
 			}
 			body, err := io.ReadAll(result.Body)
 			result.Body.Close()
