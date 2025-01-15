@@ -52,6 +52,11 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 	if conf.Token != "" {
 		httpRequest.Header.Set("Authorization", fmt.Sprintf("Bearer %s", conf.Token))
 	}
+	// inject Scanner ID if set
+	if conf.Id != "" {
+		httpRequest.Header.Set("X-Panop-Scanner", conf.Id)
+	}
+
 	return &HTTP{config: conf, httpClient: httpClient, httpReq: httpRequest}, nil
 }
 
