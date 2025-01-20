@@ -3,7 +3,7 @@ module github.com/ducksify/http-consume
 go 1.23.4
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.32.8
+	github.com/aws/aws-sdk-go-v2 v1.33.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.10.0
 )
