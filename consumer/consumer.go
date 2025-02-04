@@ -34,6 +34,9 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 	if conf.Path == "" {
 		return nil, SentinelErrorPathNotSet
 	}
+	if conf.SleepTime == 0 {
+		conf.SleepTime = 30
+	}
 
 	// create http client
 	tr := &http.Transport{
@@ -92,17 +95,28 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 				return fmt.Errorf("error during call: %w,  %w", err, SentinelApplicationError)
 			}
 
-			if result.StatusCode != http.StatusOK {
-				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
-			}
-			body, err := io.ReadAll(result.Body)
-			result.Body.Close()
-			if err != nil {
-				return fmt.Errorf("error reading body: %w,  %w", err, SentinelApplicationError)
-			}
+			switch result.StatusCode {
+			case http.StatusOK:
+				// return error if no body
+				if result.Body == nil {
+					return fmt.Errorf("error body is nil: %w", SentinelApplicationError)
+				}
+				body, err := io.ReadAll(result.Body)
+				result.Body.Close()
+				if err != nil {
+					return fmt.Errorf("error reading body: %w,  %w", err, SentinelApplicationError)
+				}
 
-			if err := consumeFn(body); err != nil {
-				return err
+				if err := consumeFn(body); err != nil {
+					return err
+				}
+
+			// if not found sleep for a while
+			case http.StatusNotFound:
+				time.Sleep(time.Duration(s.config.SleepTime) * time.Second)
+			// other http status
+			default:
+				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
 			}
 
 		}

@@ -25,6 +25,7 @@ type HttpConf struct {
 	Id             string
 	Concurrency    int
 	TimeOutSeconds int32
+	SleepTime      int32
 }
 
 type HttpClient interface {
