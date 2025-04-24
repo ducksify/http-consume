@@ -113,8 +113,13 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 
 			// if not found sleep for a while
 			case http.StatusNotFound:
-				time.Sleep(time.Duration(s.config.SleepTime) * time.Second)
-			// other http status
+				select {
+				case <-time.After(time.Duration(s.config.SleepTime) * time.Second):
+					// continue
+				case <-ctx.Done():
+					fmt.Println("Sleep interrupted immediately by shutdown.")
+				}
+				// other http status
 			default:
 				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
 			}
