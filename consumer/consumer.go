@@ -35,7 +35,7 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 		return nil, SentinelErrorPathNotSet
 	}
 	if conf.SleepTime == 0 {
-		conf.SleepTime = 30
+		conf.SleepTime = 10000
 	}
 
 	// create http client
@@ -114,7 +114,7 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 			// if not found sleep for a while
 			case http.StatusNotFound:
 				select {
-				case <-time.After(time.Duration(s.config.SleepTime) * time.Second):
+				case <-time.After(time.Duration(s.config.SleepTime) * time.Millisecond):
 					// continue
 				case <-ctx.Done():
 					fmt.Println("Sleep interrupted immediately by shutdown.")
