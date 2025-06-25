@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"golang.org/x/sync/errgroup"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,6 +77,7 @@ func (s *HTTP) Start(ctx context.Context, consumeFn ConsumerFn) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	for i := 0; i < s.config.Concurrency; i++ {
+		time.Sleep(time.Duration(rand.Intn(5)+1) * time.Second)
 		g.Go(func() error {
 			return s.handleMessages(ctx, consumeFn)
 		})
@@ -109,6 +111,11 @@ func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
 
 				if err := consumeFn(body); err != nil {
 					return err
+				}
+				select {
+				case <-time.After(time.Duration(1000) * time.Millisecond):
+				case <-ctx.Done():
+					return nil
 				}
 
 			// if not found sleep for a while
