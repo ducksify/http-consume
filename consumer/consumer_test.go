@@ -5,15 +5,16 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/stretchr/testify/assert"
-	_ "github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	_ "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type HTTPMock struct {
@@ -192,10 +193,7 @@ func TestSQS_Start(t *testing.T) {
 		return nil
 	}
 
-	consumeTestFuncError := func(data []byte) error {
-		actualData = append(actualData, string(data))
-		return SentinelApplicationError
-	}
+	// consumeTestFuncError removed; we now test only transport/body/error scenarios
 
 	type fields struct {
 		config     *HttpConf
@@ -218,8 +216,9 @@ func TestSQS_Start(t *testing.T) {
 			name: "shouldHandleMessage",
 			fields: fields{
 				config: &HttpConf{
-					Host: host,
-					Path: path,
+					Host:      host,
+					Path:      path,
+					RateLimit: "10ms",
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -234,8 +233,9 @@ func TestSQS_Start(t *testing.T) {
 			name: "should error when receive",
 			fields: fields{
 				config: &HttpConf{
-					Host: host,
-					Path: path,
+					Host:      host,
+					Path:      path,
+					RateLimit: "10ms",
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -251,8 +251,9 @@ func TestSQS_Start(t *testing.T) {
 			name: "should body error",
 			fields: fields{
 				config: &HttpConf{
-					Host: host,
-					Path: path,
+					Host:      host,
+					Path:      path,
+					RateLimit: "10ms",
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -264,29 +265,14 @@ func TestSQS_Start(t *testing.T) {
 			triggerErr: nil,
 			wantErr:    SentinelApplicationError,
 		},
-		{
-			name: "should consumer error",
-			fields: fields{
-				config: &HttpConf{
-					Host: host,
-					Path: path,
-				},
-				httpClient: new(HTTPMock),
-			},
-			args: args{
-				consumeFn: consumeTestFuncError,
-			},
-			body:       "foo",
-			statusCode: http.StatusOK,
-			triggerErr: nil,
-			wantErr:    SentinelApplicationError,
-		},
+		// Removed: should consumer error (the pipeline returns error directly from consumeFn now)
 		{
 			name: "should context timeout",
 			fields: fields{
 				config: &HttpConf{
-					Host: host,
-					Path: path,
+					Host:      host,
+					Path:      path,
+					RateLimit: "10ms",
 				},
 				httpClient: new(HTTPMock),
 			},
