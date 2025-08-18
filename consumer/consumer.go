@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -128,7 +127,6 @@ func (s *HTTP) Start(ctx context.Context, consumeFn ConsumerFn) error {
 
 	// Start HTTP request workers with rate limiting
 	for i := 0; i < s.config.Concurrency; i++ {
-		time.Sleep(time.Duration(rand.Intn(5)+1) * time.Second)
 		g.Go(func() error {
 			return s.handleMessagesWithRateLimit(ctx, processChan, rateLimiter.C)
 		})
