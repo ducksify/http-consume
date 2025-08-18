@@ -1,131 +1,95 @@
-# HTTP Consumer
+### HTTP Consumer
 
-A flexible HTTP consumer with support for multiple results, rate limiting, and controlled concurrency.
+A flexible HTTP consumer with support for multiple results per response, string-based rate limiting, and two-stage concurrency.
 
-## Features
+### Features
 
-- **Rate Limiting**: Control the frequency of HTTP requests
-- **Multiple Results**: Process multiple results from a single HTTP response
-- **Worker Pools**: Separate workers for HTTP requests and result processing
-- **Custom Parsers**: Define custom functions to parse response bodies
-- **Concurrency Control**: Manage both HTTP request concurrency and result processing concurrency
+- **Rate limiting (string durations)**: Control request pace with values like "500ms", "1s", "2m".
+- **Multiple results per response**: Each HTTP response can produce up to `MaxResults` items.
+- **Two-stage concurrency**: Control request concurrency with `Concurrency` and processing concurrency with `WorkerPoolSize`.
+- **Backpressure**: Blocking channel sends ensure downstream saturation naturally throttles upstream.
+- **Graceful shutdown and error propagation**.
 
-## Configuration
+### Configuration
 
 ```go
 type HttpConf struct {
-	Host           string        // Target host
-	Path           string        // API path
-	Token          string        // Bearer token
-	Id             string        // Scanner ID
-	Concurrency    int           // Number of HTTP request workers
-	TimeOutSeconds int32         // HTTP timeout
-	SleepTime      int32         // Sleep time on 404 (milliseconds)
-	MaxResults     int           // Max results per request
-	RateLimit      time.Duration // Minimum time between HTTP requests
-	WorkerPoolSize int           // Number of result processing workers
-	ParserFn       ParserFn      // Custom parser function
+	Host                 string        // Target host
+	Path                 string        // API path
+	Token                string        // Bearer token
+	Id                   string        // Scanner ID
+	Concurrency          int           // Number of HTTP request workers
+	TimeOutSeconds       int32         // HTTP timeout (seconds)
+	SleepTime404         string        // Sleep time on 404 (e.g., "30s", "1m30s")
+	MaxResults           int           // Max results requested per call (API specific)
+	RateLimit            string        // Minimum time between HTTP requests (e.g., "1s", "500ms")
+	WorkerPoolSize       int           // Number of result processing workers
+	SequentialProcessing bool          // If true, adds a tiny delay between items
 }
 ```
 
-## Usage Examples
+Notes:
+- If `WorkerPoolSize` is 0, it defaults to `Concurrency` (and is capped to not exceed it). If `Concurrency` is 1, it defaults to 1 for sequential processing.
+- `RateLimit` is parsed with `time.ParseDuration`.
 
 ### Basic Usage
 
 ```go
 conf := &consumer.HttpConf{
-	Host:        "api.example.com",
-	Path:        "/data",
-	Token:       "your-token",
-	Concurrency: 2,
-	RateLimit:   2 * time.Second,
+	Host:           "api.example.com",
+	Path:           "/data",
+	Token:          "your-token",
+	Concurrency:    2,
+	RateLimit:      "2s",
 	WorkerPoolSize: 3,
+	SleepTime404:   "30s",
 }
 
-consumer, err := consumer.NewHTTPConsumer(conf)
+c, err := consumer.NewHTTPConsumer(conf)
 if err != nil {
 	log.Fatal(err)
 }
 
-err = consumer.Start(context.Background(), func(data []byte) error {
+err = c.Start(context.Background(), func(data []byte) error {
 	// Process each result
 	fmt.Printf("Processing: %s\n", string(data))
 	return nil
 })
-```
-
-### With Custom Parser
-
-```go
-// Custom parser for JSON array responses
-func jsonArrayParser(body []byte) ([]consumer.Result, error) {
-	var data []interface{}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, err
-	}
-	
-	var results []consumer.Result
-	for _, item := range data {
-		itemBytes, _ := json.Marshal(item)
-		results = append(results, consumer.Result{Data: itemBytes})
-	}
-	
-	return results, nil
-}
-
-conf := &consumer.HttpConf{
-	Host:        "api.example.com",
-	Path:        "/data",
-	Concurrency: 1,
-	RateLimit:   1 * time.Second,
-	WorkerPoolSize: 5,
-}
-
-consumer, err := consumer.NewHTTPConsumerWithParser(conf, jsonArrayParser)
 if err != nil {
 	log.Fatal(err)
 }
-
-err = consumer.Start(context.Background(), func(data []byte) error {
-	// Process each individual result from the JSON array
-	fmt.Printf("Processing item: %s\n", string(data))
-	return nil
-})
 ```
 
 ### Rate Limiting and Concurrency
 
 The consumer provides two levels of concurrency control:
 
-1. **HTTP Request Workers** (`Concurrency`): Control how many HTTP requests can be made simultaneously
-2. **Result Processing Workers** (`WorkerPoolSize`): Control how many results can be processed simultaneously
+1. **HTTP Request Workers** (`Concurrency`): how many HTTP workers run in parallel (each obeys `RateLimit`).
+2. **Result Processing Workers** (`WorkerPoolSize`): how many results are processed in parallel.
 
-The `RateLimit` ensures a minimum time between HTTP requests, preventing overwhelming the server.
+`RateLimit` ensures a minimum gap between requests from each worker.
 
-## Architecture
+### Architecture
 
 ```
-HTTP Request Workers (Concurrency) 
+HTTP Request Workers (Concurrency)
     ↓ (Rate Limited)
 HTTP Client
     ↓
 Response Body
     ↓
-Custom Parser (ParserFn)
+Parse into multiple results (internal)
     ↓
-Multiple Results
-    ↓
-Result Channel (Buffered)
+Result Channel (buffered by WorkerPoolSize)
     ↓
 Result Processing Workers (WorkerPoolSize)
     ↓
 consumeFn(data)
 ```
 
-## Benefits
+### Benefits
 
-1. **Efficient Resource Usage**: Rate limiting prevents overwhelming the server
-2. **Flexible Processing**: Custom parsers allow handling various response formats
-3. **Controlled Concurrency**: Separate control over HTTP requests and result processing
-4. **Backpressure Handling**: Buffered channels prevent memory issues
-5. **Error Handling**: Proper error propagation through the pipeline
+- **Efficient resource usage**: Rate limiting prevents overwhelming the server.
+- **Controlled concurrency**: Separate control over HTTP requests and result processing.
+- **Backpressure handling**: Blocking sends on the result channel prevent overload.
+- **Error handling**: Proper error propagation through the pipeline.
