@@ -8,6 +8,10 @@ import (
 const (
 	DefaultTimeOutSeconds = int32(5)
 	DefaultConcurrency    = 1
+	DefaultMaxResults     = 10
+	DefaultRateLimit      = "3s"
+	DefaultWorkerPoolSize = 5
+	DefaultSleepTime404   = "30s"
 )
 
 var (
@@ -19,13 +23,17 @@ var (
 )
 
 type HttpConf struct {
-	Host           string
-	Path           string
-	Token          string
-	Id             string
-	Concurrency    int
-	TimeOutSeconds int32
-	SleepTime      int32
+	Host                 string
+	Path                 string
+	Token                string
+	Id                   string
+	Concurrency          int
+	TimeOutSeconds       int32
+	SleepTime404         string // Sleep time on 404 (e.g., "1m", "1h30m")
+	MaxResults           int    // Maximum number of results to process per request
+	RateLimit            string // Minimum time between HTTP requests (e.g., "1s", "500ms")
+	WorkerPoolSize       int    // Number of workers to process results
+	SequentialProcessing bool   // If true, process items one at a time even with MaxResults > 1
 }
 
 type HttpClient interface {
@@ -39,3 +47,12 @@ type HTTP struct {
 }
 
 type ConsumerFn func(data []byte) error
+
+// ParserFn is a function that parses HTTP response body into multiple results
+type ParserFn func(body []byte) ([]Result, error)
+
+// Result represents a single result from the HTTP response
+type Result struct {
+	Data []byte
+	Err  error
+}
