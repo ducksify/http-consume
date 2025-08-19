@@ -57,19 +57,6 @@ func NewHTTPConsumer(conf *HttpConf) (*HTTP, error) {
 		conf.RateLimit = DefaultRateLimit
 	}
 
-	// check if worker pool size is set and set default to match Concurrency if not
-	if conf.WorkerPoolSize == 0 {
-		// If concurrency is 1, default to 1 worker for sequential processing
-		if conf.Concurrency == 1 {
-			conf.WorkerPoolSize = 1
-		} else {
-			conf.WorkerPoolSize = conf.Concurrency
-		}
-	} else if conf.WorkerPoolSize > conf.Concurrency {
-		// cap worker pool so it never exceeds request concurrency
-		conf.WorkerPoolSize = conf.Concurrency
-	}
-
 	// create http client
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -116,10 +103,10 @@ func (s *HTTP) Start(ctx context.Context, consumeFn ConsumerFn) error {
 	defer rateLimiter.Stop()
 
 	// Create a single channel for parsed results and is sized to WorkerPoolSize
-	processChan := make(chan Result, s.config.WorkerPoolSize)
+	processChan := make(chan Result, s.config.Concurrency)
 
 	// Start worker pool to process results
-	for i := 0; i < s.config.WorkerPoolSize; i++ {
+	for i := 0; i < s.config.Concurrency; i++ {
 		g.Go(func() error {
 			return s.resultWorker(ctx, processChan, consumeFn)
 		})

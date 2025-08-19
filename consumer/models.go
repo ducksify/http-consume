@@ -32,8 +32,6 @@ type HttpConf struct {
 	SleepTime404         string // Sleep time on 404 (e.g., "1m", "1h30m")
 	MaxResults           int    // Maximum number of results to process per request
 	RateLimit            string // Minimum time between HTTP requests (e.g., "1s", "500ms")
-	WorkerPoolSize       int    // Number of workers to process results
-	SequentialProcessing bool   // If true, process items one at a time even with MaxResults > 1
 }
 
 type HttpClient interface {
