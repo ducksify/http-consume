@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -122,55 +123,6 @@ func (s *HTTP) Start(ctx context.Context, consumeFn ConsumerFn) error {
 	return g.Wait()
 }
 
-func (s *HTTP) handleMessages(ctx context.Context, consumeFn ConsumerFn) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			result, err := s.httpClient.Do(s.httpReq)
-			if err != nil {
-				return fmt.Errorf("error during call: %w,  %w", err, SentinelApplicationError)
-			}
-
-			switch result.StatusCode {
-			case http.StatusOK:
-				// return error if no body
-				if result.Body == nil {
-					return fmt.Errorf("error body is nil: %w", SentinelApplicationError)
-				}
-				body, err := io.ReadAll(result.Body)
-				result.Body.Close()
-				if err != nil {
-					return fmt.Errorf("error reading body: %w,  %w", err, SentinelApplicationError)
-				}
-
-				if err := consumeFn(body); err != nil {
-					return err
-				}
-
-			// if not found sleep for a while
-			case http.StatusNotFound:
-				// parse sleep time
-				sleepTime, err := time.ParseDuration(s.config.SleepTime404)
-				if err != nil {
-					return fmt.Errorf("error parsing sleep time: %w", err)
-				}
-				select {
-				case <-time.After(sleepTime):
-					// continue
-				case <-ctx.Done():
-					fmt.Println("Sleep interrupted immediately by shutdown.")
-				}
-				// other http status
-			default:
-				return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
-			}
-
-		}
-	}
-}
-
 func (s *HTTP) handleMessagesWithRateLimit(ctx context.Context, processChan chan Result, rateLimiter <-chan time.Time) error {
 	for {
 		select {
@@ -209,20 +161,15 @@ func (s *HTTP) handleMessagesWithRateLimit(ctx context.Context, processChan chan
 						}
 					}
 				case http.StatusNotFound:
-					// parse sleep time
-					sleepTime, err := time.ParseDuration(s.config.SleepTime404)
-					if err != nil {
-						return fmt.Errorf("error parsing sleep time: %w", err)
+					if err := s.sleepOnError(ctx); err != nil {
+						return err
 					}
-					select {
-					case <-time.After(sleepTime):
-						// continue
-					case <-ctx.Done():
-						fmt.Println("Sleep interrupted immediately by shutdown.")
-					}
-					// other http status
+				// other http status
 				default:
-					return fmt.Errorf("error http during call: %s,  %w", http.StatusText(result.StatusCode), SentinelHttpError)
+					slog.Error("error http during call", "status", result.StatusCode, "error", SentinelHttpError)
+					if err := s.sleepOnError(ctx); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -271,3 +218,18 @@ func (s *HTTP) resultWorker(ctx context.Context, resultChan chan Result, consume
 }
 
 // parserWorker removed: HTTP workers parse and enqueue results directly
+
+// sleepOnError handles sleeping on errors with context cancellation support
+func (s *HTTP) sleepOnError(ctx context.Context) error {
+	sleepTime, err := time.ParseDuration(s.config.SleepTime404)
+	if err != nil {
+		return fmt.Errorf("error parsing sleep time: %w", err)
+	}
+	select {
+	case <-time.After(sleepTime):
+		return nil
+	case <-ctx.Done():
+		fmt.Println("interrupted immediately.")
+		return nil
+	}
+}
