@@ -6,32 +6,37 @@ import (
 )
 
 const (
-	DefaultTimeOutSeconds = int32(5)
-	DefaultConcurrency    = 1
-	DefaultMaxResults     = 10
-	DefaultRateLimit      = "3s"
-	DefaultWorkerPoolSize = 5
-	DefaultSleepTime404   = "30s"
+	DefaultTimeOutSeconds     = int32(5)
+	DefaultConcurrency        = 1
+	DefaultMaxResults         = 10
+	DefaultRateLimit          = "3s"
+	DefaultWorkerPoolSize     = 5
+	DefaultSleepTime404       = "30s"
+	DefaultSleepTimeCallError = "1s"
+	DefaultMaxBackoff         = "5m"
 )
 
 var (
-	SentinelErrorHostNotSet  = errors.New("queue not set")
-	SentinelErrorPathNotSet  = errors.New("path not set")
-	SentinelErrorConfigIsNil = errors.New("configuration is nil")
-	SentinelHttpError        = errors.New("http call error")
-	SentinelApplicationError = errors.New("http call error")
+	SentinelErrorHostNotSet                    = errors.New("queue not set")
+	SentinelErrorPathNotSet                    = errors.New("path not set")
+	SentinelErrorConfigIsNil                   = errors.New("configuration is nil")
+	SentinelErrorConcurrencyLessThanMaxResults = errors.New("concurrency is less than max results")
+	SentinelHttpError                          = errors.New("http call error")
+	SentinelApplicationError                   = errors.New("http call error")
 )
 
 type HttpConf struct {
-	Host                 string
-	Path                 string
-	Token                string
-	Id                   string
-	Concurrency          int
-	TimeOutSeconds       int32
-	SleepTime404         string // Sleep time on 404 (e.g., "1m", "1h30m")
-	MaxResults           int    // Maximum number of results to process per request
-	RateLimit            string // Minimum time between HTTP requests (e.g., "1s", "500ms")
+	Host               string
+	Path               string
+	Token              string
+	Id                 string
+	Concurrency        int
+	TimeOutSeconds     int32
+	SleepTime404       string // Sleep time on 404 (e.g., "1m", "1h30m")
+	SleepTimeCallError string // Sleep time on call errors with exponential backoff (e.g., "1s", "500ms")
+	MaxBackoff         string // Maximum backoff duration (e.g., "5m", "10m")
+	MaxResults         int    // Maximum number of results to process per request
+	RateLimit          string // Minimum time between HTTP requests (e.g., "1s", "500ms")
 }
 
 type HttpClient interface {
@@ -42,6 +47,8 @@ type HTTP struct {
 	config     *HttpConf
 	httpClient HttpClient
 	httpReq    *http.Request
+	semaphore  chan struct{}
+	errorCount int // Counter for consecutive errors to implement logarithmic backoff
 }
 
 type ConsumerFn func(data []byte) error

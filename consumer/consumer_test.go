@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"testing"
@@ -67,22 +68,31 @@ func unsetEnv(keyValue ...string) {
 
 func TestNewHTTPWorker(t *testing.T) {
 	sqsConf := &HttpConf{
-		Host:           "host",
-		Path:           "path",
-		Concurrency:    2,
-		TimeOutSeconds: 20,
+		Host:               "host",
+		Path:               "path",
+		Concurrency:        2,
+		TimeOutSeconds:     20,
+		SleepTimeCallError: "1s",
+		MaxBackoff:         "5m",
+		MaxResults:         1,
 	}
 	sqsConfHostEmpty := &HttpConf{
-		Host:           "",
-		Path:           "path",
-		Concurrency:    2,
-		TimeOutSeconds: 20,
+		Host:               "",
+		Path:               "path",
+		Concurrency:        2,
+		TimeOutSeconds:     20,
+		SleepTimeCallError: "1s",
+		MaxBackoff:         "5m",
+		MaxResults:         1,
 	}
 	sqsConfPathEmpty := &HttpConf{
-		Host:           "host",
-		Path:           "",
-		Concurrency:    2,
-		TimeOutSeconds: 20,
+		Host:               "host",
+		Path:               "",
+		Concurrency:        2,
+		TimeOutSeconds:     20,
+		SleepTimeCallError: "1s",
+		MaxBackoff:         "5m",
+		MaxResults:         1,
 	}
 
 	// create http client
@@ -171,7 +181,7 @@ func TestNewHTTPWorker(t *testing.T) {
 
 			got, err := NewHTTPConsumer(tt.args.conf)
 			if err != nil && tt.wantErr == nil {
-				t.Errorf("Error creation new Consumer")
+				t.Errorf("Error creation new Consumer: %v", err)
 				return
 			}
 			if tt.wantErr != nil {
@@ -216,9 +226,12 @@ func TestSQS_Start(t *testing.T) {
 			name: "shouldHandleMessage",
 			fields: fields{
 				config: &HttpConf{
-					Host:      host,
-					Path:      path,
-					RateLimit: "10ms",
+					Host:               host,
+					Path:               path,
+					RateLimit:          "10ms",
+					SleepTimeCallError: "1s",
+					MaxBackoff:         "5m",
+					MaxResults:         1,
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -233,9 +246,12 @@ func TestSQS_Start(t *testing.T) {
 			name: "should error when receive",
 			fields: fields{
 				config: &HttpConf{
-					Host:      host,
-					Path:      path,
-					RateLimit: "10ms",
+					Host:               host,
+					Path:               path,
+					RateLimit:          "10ms",
+					SleepTimeCallError: "1s",
+					MaxBackoff:         "5m",
+					MaxResults:         1,
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -245,15 +261,18 @@ func TestSQS_Start(t *testing.T) {
 			body:       "foo",
 			statusCode: http.StatusInternalServerError,
 			triggerErr: nil,
-			wantErr:    SentinelHttpError,
+			wantErr:    nil, // Now sleeps on error instead of returning it
 		},
 		{
 			name: "should body error",
 			fields: fields{
 				config: &HttpConf{
-					Host:      host,
-					Path:      path,
-					RateLimit: "10ms",
+					Host:               host,
+					Path:               path,
+					RateLimit:          "10ms",
+					SleepTimeCallError: "1s",
+					MaxBackoff:         "5m",
+					MaxResults:         1,
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -263,16 +282,19 @@ func TestSQS_Start(t *testing.T) {
 			body:       "",
 			statusCode: http.StatusOK,
 			triggerErr: nil,
-			wantErr:    SentinelApplicationError,
+			wantErr:    nil, // Now sleeps on error instead of returning it
 		},
 		// Removed: should consumer error (the pipeline returns error directly from consumeFn now)
 		{
 			name: "should context timeout",
 			fields: fields{
 				config: &HttpConf{
-					Host:      host,
-					Path:      path,
-					RateLimit: "10ms",
+					Host:               host,
+					Path:               path,
+					RateLimit:          "10ms",
+					SleepTimeCallError: "1s",
+					MaxBackoff:         "5m",
+					MaxResults:         1,
 				},
 				httpClient: new(HTTPMock),
 			},
@@ -318,4 +340,61 @@ func TestSQS_Start(t *testing.T) {
 			assert.ErrorIs(t, err, tt.wantErr)
 		})
 	}
+}
+
+func TestExponentialBackoff(t *testing.T) {
+	config := &HttpConf{
+		Host:               "test",
+		Path:               "test",
+		SleepTimeCallError: "1s",
+		MaxBackoff:         "5m",
+		MaxResults:         1,
+	}
+
+	consumer, err := NewHTTPConsumer(config)
+	require.NoError(t, err)
+
+	// Test exponential backoff calculation
+	baseDuration := time.Second
+
+	// First error: 1x multiplier (2^0 = 1) + jitter
+	consumer.errorCount = 1
+	backoff1 := consumer.calculateExponentialBackoff(baseDuration)
+	// With jitter, it should be around 1s ± 25%
+	assert.True(t, backoff1 >= baseDuration*75/100)  // At least 75% of base
+	assert.True(t, backoff1 <= baseDuration*125/100) // At most 125% of base
+
+	// Second error: 2x multiplier (2^1 = 2) + jitter
+	consumer.errorCount = 2
+	backoff2 := consumer.calculateExponentialBackoff(baseDuration)
+	expected2 := time.Duration(float64(baseDuration) * math.Pow(2, 1)) // 2^(2-1) = 2
+	// With jitter, it should be around 2s ± 25%
+	assert.True(t, backoff2 >= expected2*75/100)
+	assert.True(t, backoff2 <= expected2*125/100)
+
+	// Third error: 4x multiplier (2^2 = 4) + jitter
+	consumer.errorCount = 3
+	backoff3 := consumer.calculateExponentialBackoff(baseDuration)
+	expected3 := time.Duration(float64(baseDuration) * math.Pow(2, 2)) // 2^(3-1) = 4
+	// With jitter, it should be around 4s ± 25%
+	assert.True(t, backoff3 >= expected3*75/100)
+	assert.True(t, backoff3 <= expected3*125/100)
+
+	// Verify backoff increases exponentially (accounting for jitter)
+	assert.True(t, backoff2 > backoff1)
+	assert.True(t, backoff3 > backoff2)
+
+	// Test with zero error count (should return base duration)
+	consumer.errorCount = 0
+	backoff0 := consumer.calculateExponentialBackoff(baseDuration)
+	assert.Equal(t, baseDuration, backoff0)
+
+	// Test maximum backoff cap (5 minutes)
+	consumer.errorCount = 100 // This would be 2^99 seconds without cap
+	backoffMax := consumer.calculateExponentialBackoff(baseDuration)
+	assert.Equal(t, 5*time.Minute, backoffMax)
+
+	// Test reset error count
+	consumer.resetErrorCount()
+	assert.Equal(t, 0, consumer.errorCount)
 }
