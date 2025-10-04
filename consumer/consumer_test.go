@@ -392,7 +392,9 @@ func TestExponentialBackoff(t *testing.T) {
 	// Test maximum backoff cap (5 minutes)
 	consumer.errorCount = 100 // This would be 2^99 seconds without cap
 	backoffMax := consumer.calculateExponentialBackoff(baseDuration)
-	assert.Equal(t, 5*time.Minute, backoffMax)
+	// With jitter, it should be around 5m ± 25%, but capped at 5m
+	assert.True(t, backoffMax >= 5*time.Minute*75/100) // At least 75% of 5m
+	assert.True(t, backoffMax <= 5*time.Minute)        // At most 5m (capped)
 
 	// Test reset error count
 	consumer.resetErrorCount()
